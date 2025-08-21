@@ -19,7 +19,6 @@ import {
   Login,
 } from '@mui/icons-material';
 import { apiService } from '../services/api';
-import toast from 'react-hot-toast';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -30,39 +29,17 @@ export const LoginPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-
-    if (!email || !token) {
-      setError('Por favor, preencha todos os campos');
-      return;
-    }
-
     setIsLoading(true);
-
+    
     try {
-      // Check if in development mode and validate mock credentials
-      if (import.meta.env.DEV || import.meta.env.VITE_MOCK_MODE === 'true') {
-        if (apiService.isValidMockCredentials(email, token)) {
-          apiService.setToken(token);
-          localStorage.setItem('userEmail', email);
-          toast.success('Login realizado com sucesso!');
-          navigate('/');
-          return;
-        } else {
-          setError('Credenciais inválidas. Use as credenciais de teste fornecidas.');
-          return;
-        }
+      if (apiService.isValidMockCredentials(email, token)) {
+        apiService.setToken(token);
+        navigate('/import');
+      } else {
+        setError('Credenciais inválidas');
       }
-
-      // Production login logic (original code)
-      apiService.setToken(token);
-      localStorage.setItem('userEmail', email);
-      
-      toast.success('Login realizado com sucesso!');
-      navigate('/');
-    } catch (err) {
-      setError('Token inválido. Verifique suas credenciais.');
-      apiService.clearToken();
+    } catch {
+      setError('Erro ao fazer login');
     } finally {
       setIsLoading(false);
     }

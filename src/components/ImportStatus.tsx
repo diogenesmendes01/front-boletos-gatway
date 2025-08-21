@@ -75,13 +75,13 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
         setIsPolling(false);
         if (onComplete) onComplete();
       }
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.error?.message || 'Erro ao buscar status';
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao buscar status';
       setError(errorMessage);
       console.error('Error fetching status:', err);
       
       // Se for erro 404, pode ser que a importação ainda não foi processada
-      if (err.response?.status === 404) {
+      if (err && typeof err === 'object' && 'response' in err && (err.response as { status?: number })?.status === 404) {
         toast.error('Importação não encontrada. Verifique se o ID está correto.');
       }
     }
@@ -221,12 +221,12 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
     return `${minutes}m ${secs}s`;
   };
 
-  const calculateProgress = (): number => {
+  const calculateProgress = useCallback((): number => {
     if (!status?.stats) return 0;
     const { total, processed } = status.stats;
     if (total === 0) return 0;
     return Math.round((processed / total) * 100);
-  };
+  }, [status?.stats]);
 
   const getStatusDescription = (): string => {
     if (!status) return '';
@@ -247,7 +247,7 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
     }
   };
 
-  const progress = useMemo(() => calculateProgress(), [status?.stats]);
+  const progress = useMemo(() => calculateProgress(), [calculateProgress]);
 
   if (error) {
     return (
@@ -300,7 +300,7 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
                 <Chip
                   icon={getStatusIcon(status.status)}
                   label={getStatusLabel(status.status)}
-                  color={getStatusColor(status.status) as any}
+                  color={getStatusColor(status.status) as 'success' | 'error' | 'primary' | 'default'}
                   sx={{ px: 2, py: 1 }}
                 />
                 <Tooltip title="Atualizar status">

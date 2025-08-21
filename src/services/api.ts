@@ -1,11 +1,11 @@
 import axios from 'axios';
-import type { AxiosInstance, AxiosError } from 'axios';
+import type { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 import type { ImportResponse, ImportStatusResponse } from '../types/import.types';
 import { config } from '../config/environment';
 
 class ApiService {
   private client: AxiosInstance;
-  private mockData: { [key: string]: any } = {};
+  private mockData: { [key: string]: ImportStatusResponse & { importId: string } } = {};
 
   constructor() {
     this.client = axios.create({
@@ -33,7 +33,7 @@ class ApiService {
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest = error.config as any;
+        const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
         
         // Retry automático para erros 5xx e 429
         if (this.shouldRetry(error) && !originalRequest._retry) {
@@ -61,7 +61,7 @@ class ApiService {
 
   private handleApiError(error: AxiosError) {
     const status = error.response?.status;
-    const errorData = error.response?.data as any;
+    const errorData = error.response?.data as { error?: { code: string; message: string } };
 
     switch (status) {
       case 401:
@@ -236,12 +236,18 @@ class ApiService {
   // Mock methods for development
   private async mockUploadImport(
     _file: File,
-    _options?: any
+    _options?: {
+      fileType?: 'csv' | 'xlsx';
+      delimiter?: ',' | ';';
+      dateFormat?: 'YYYY-MM-DD' | 'DD/MM/YYYY';
+      webhookUrl?: string;
+    }
   ): Promise<ImportResponse> {
     await this.delay(1000);
     
     const importId = crypto.randomUUID();
     this.mockData[importId] = {
+      importId,
       status: 'queued',
       stats: {
         total: 100,
@@ -251,7 +257,7 @@ class ApiService {
         remaining: 100,
       },
       startedAt: new Date().toISOString(),
-      finishedAt: null,
+      finishedAt: undefined,
       etaSeconds: 30,
     };
 
@@ -300,12 +306,10 @@ incomplete@data.com,,12345678901,50.00,Nome obrigatório`;
 
   private mockSubscribeToProgress(
     importId: string,
-    onMessage: (data: any) => void,
+    onMessage: (data: unknown) => void,
     _onError?: (error: Event) => void
   ): () => void {
-    let interval: number;
-    
-    const sendProgress = () => {
+    const interval = setInterval(() => {
       const data = this.mockData[importId];
       if (data && data.status === 'processing') {
         onMessage({
@@ -316,14 +320,10 @@ incomplete@data.com,,12345678901,50.00,Nome obrigatório`;
           etaSeconds: data.etaSeconds,
         });
       }
-    };
-
-    interval = window.setInterval(sendProgress, 1000);
+    }, 1000);
     
     return () => {
-      if (interval) {
-        window.clearInterval(interval);
-      }
+      clearInterval(interval);
     };
   }
 
@@ -333,7 +333,7 @@ incomplete@data.com,,12345678901,50.00,Nome obrigatório`;
 
     data.status = 'processing';
     
-    const interval = window.setInterval(() => {
+    const interval = setInterval(() => {
       if (data.stats.processed < data.stats.total) {
         const increment = Math.min(5, data.stats.total - data.stats.processed);
         data.stats.processed += increment;
@@ -354,7 +354,7 @@ incomplete@data.com,,12345678901,50.00,Nome obrigatório`;
         data.status = 'completed';
         data.finishedAt = new Date().toISOString();
         data.etaSeconds = 0;
-        window.clearInterval(interval);
+        clearInterval(interval);
       }
     }, 1000);
   }

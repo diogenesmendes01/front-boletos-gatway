@@ -97,14 +97,14 @@ export const ImportPage: React.FC = () => {
   };
 
   const getStatusLabel = (status: string) => {
-    const labels = {
+    const labels: Record<string, string> = {
       queued: 'Na fila',
       processing: 'Processando',
       completed: 'Concluído',
       failed: 'Falhou',
       canceled: 'Cancelado',
     };
-    return labels[status as keyof typeof labels] || status;
+    return labels[status] || status;
   };
 
   return (
@@ -191,7 +191,7 @@ export const ImportPage: React.FC = () => {
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Chip
                         label={getStatusLabel(importItem.status)}
-                        color={getStatusColor(importItem.status) as any}
+                        color={getStatusColor(importItem.status) as 'success' | 'error' | 'primary' | 'warning' | 'default'}
                         size="small"
                       />
                       {importItem.stats && (

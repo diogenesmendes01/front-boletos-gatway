@@ -41,56 +41,6 @@ export const useImportManager = (): UseImportManagerReturn => {
   const [isUploading, setIsUploading] = useState(false);
   const uploadAbortController = useRef<AbortController | null>(null);
 
-  const uploadFile = useCallback(async (file: File, options?: UploadOptions) => {
-    if (isUploading) {
-      toast.error('Já existe um upload em andamento');
-      return;
-    }
-
-    setIsUploading(true);
-    
-    try {
-      // Criar controller para cancelar upload se necessário
-      uploadAbortController.current = new AbortController();
-      
-      const response = await apiService.uploadImport(file, options);
-      
-      const newImport: ImportItem = {
-        importId: response.importId,
-        status: response.status,
-        fileName: file.name,
-        uploadedAt: new Date(),
-        stats: {
-          total: 0,
-          processed: 0,
-          succeeded: 0,
-          failed: 0,
-          remaining: 0,
-        },
-      };
-
-      setImports(prev => [newImport, ...prev].slice(0, 20)); // Manter apenas as 20 mais recentes
-      setCurrentImport(newImport);
-      
-      toast.success('Arquivo enviado com sucesso!');
-      
-      // Iniciar monitoramento automático
-      startMonitoring(newImport.importId);
-      
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        toast.error('Upload cancelado');
-      } else {
-        const errorMessage = error.response?.data?.error?.message || 'Erro ao enviar arquivo';
-        toast.error(errorMessage);
-        console.error('Upload error:', error);
-      }
-    } finally {
-      setIsUploading(false);
-      uploadAbortController.current = null;
-    }
-  }, [isUploading]);
-
   const startMonitoring = useCallback((importId: string) => {
     // Monitorar status a cada 5 segundos até completar
     const interval = setInterval(async () => {
@@ -140,6 +90,56 @@ export const useImportManager = (): UseImportManagerReturn => {
     // Limpar intervalo após 10 minutos (timeout de segurança)
     setTimeout(() => clearInterval(interval), 10 * 60 * 1000);
   }, []);
+
+  const uploadFile = useCallback(async (file: File, options?: UploadOptions) => {
+    if (isUploading) {
+      toast.error('Já existe um upload em andamento');
+      return;
+    }
+
+    setIsUploading(true);
+    
+    try {
+      // Criar controller para cancelar upload se necessário
+      uploadAbortController.current = new AbortController();
+      
+      const response = await apiService.uploadImport(file, options);
+      
+      const newImport: ImportItem = {
+        importId: response.importId,
+        status: response.status,
+        fileName: file.name,
+        uploadedAt: new Date(),
+        stats: {
+          total: 0,
+          processed: 0,
+          succeeded: 0,
+          failed: 0,
+          remaining: 0,
+        },
+      };
+
+      setImports(prev => [newImport, ...prev].slice(0, 20)); // Manter apenas as 20 mais recentes
+      setCurrentImport(newImport);
+      
+      toast.success('Arquivo enviado com sucesso!');
+      
+      // Iniciar monitoramento automático
+      startMonitoring(newImport.importId);
+      
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        toast.error('Upload cancelado');
+      } else {
+        const errorMessage = error instanceof Error ? error.message : 'Erro ao enviar arquivo';
+        toast.error(errorMessage);
+        console.error('Upload error:', error);
+      }
+    } finally {
+      setIsUploading(false);
+      uploadAbortController.current = null;
+    }
+  }, [isUploading, startMonitoring]);
 
   const selectImport = useCallback((importId: string) => {
     const importItem = imports.find(imp => imp.importId === importId);
