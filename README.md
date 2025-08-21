@@ -1,145 +1,240 @@
-# Importador de Boletos - Frontend
+# Importador de Boletos - OlympiaBank Integration
 
-Aplicação React para importação em massa de boletos através da integração com OlympiaBank.
+Frontend moderno para importação de boletos bancários via API OlympiaBank, desenvolvido com React, TypeScript e Material-UI.
 
-## Funcionalidades
+## 🚀 **Funcionalidades**
 
-- ✅ Upload de arquivos CSV/XLSX com validação
-- ✅ Acompanhamento de progresso em tempo real (SSE e Polling)
-- ✅ Download de relatórios de sucesso e erro
-- ✅ Autenticação via Bearer Token
-- ✅ Histórico de importações
-- ✅ Tratamento de erros detalhado
-- ✅ Interface responsiva com Tailwind CSS
+- **Upload de arquivos** CSV/XLSX com validação em tempo real
+- **Monitoramento em tempo real** via Server-Sent Events (SSE)
+- **Fallback automático** para polling em caso de falha no SSE
+- **Validação robusta** de arquivos (formato, tamanho, colunas)
+- **Histórico de importações** com cache inteligente
+- **Retry automático** para erros de rede
+- **Interface responsiva** e moderna
+- **Tratamento de erros** abrangente
 
-## Requisitos
+## 🛠️ **Stack Tecnológica**
+
+- **Frontend**: React 19 + TypeScript
+- **UI Framework**: Material-UI (MUI) v7
+- **HTTP Client**: Axios com interceptors
+- **Estado**: React Hooks personalizados
+- **Validação**: Validação em tempo real
+- **Build**: Vite
+- **Linting**: ESLint
+
+## 📋 **Requisitos**
 
 - Node.js 18+
 - npm ou yarn
 
-## Instalação
+## 🚀 **Instalação e Configuração**
 
-1. Clone o repositório:
+### 1. **Clone o repositório**
 ```bash
 git clone <repository-url>
-cd boletos-import-app
+cd front-boletos-gatway
 ```
 
-2. Instale as dependências:
+### 2. **Instale as dependências**
 ```bash
 npm install
 ```
 
-3. Configure as variáveis de ambiente:
+### 3. **Configure as variáveis de ambiente**
+Crie um arquivo `.env.local` na raiz do projeto:
+
+```env
+# URL da API OlympiaBank
+VITE_API_BASE_URL=https://api.envio-boleto.olympiabank.xyz
+
+# Modo de desenvolvimento (true para mock, false para API real)
+VITE_MOCK_MODE=false
+
+# Nome da aplicação
+VITE_APP_NAME=Importador de Boletos
+```
+
+### 4. **Execute o projeto**
 ```bash
-cp .env.example .env
-```
-
-Edite o arquivo `.env` com a URL da API:
-```
-VITE_API_BASE_URL=https://api.seudominio.com
-```
-
-## Executando o Projeto
-
-### Desenvolvimento
-```bash
+# Desenvolvimento
 npm run dev
-```
 
-A aplicação estará disponível em `http://localhost:5173`
-
-### Build para Produção
-```bash
+# Build de produção
 npm run build
-```
 
-### Preview do Build
-```bash
+# Preview da build
 npm run preview
 ```
 
-## Estrutura do Projeto
+## 📁 **Estrutura do Projeto**
 
 ```
 src/
 ├── components/          # Componentes reutilizáveis
-│   ├── FileUpload.tsx   # Upload de arquivos com validações
-│   ├── ImportStatus.tsx # Acompanhamento de status
-│   └── ProtectedRoute.tsx # Rota protegida por autenticação
+│   ├── FileUpload.tsx  # Upload e validação de arquivos
+│   └── ImportStatus.tsx # Status e progresso das importações
+├── config/             # Configurações centralizadas
+│   └── environment.ts  # Variáveis de ambiente e configurações
+├── hooks/              # Hooks personalizados
+│   ├── useErrorHandler.ts # Tratamento de erros
+│   └── useImportManager.ts # Gerenciamento de importações
 ├── pages/              # Páginas da aplicação
-│   ├── LoginPage.tsx   # Tela de login
-│   └── ImportPage.tsx  # Tela principal de importação
-├── services/           # Serviços e APIs
-│   └── api.ts         # Cliente HTTP e integrações
-├── hooks/             # React hooks customizados
-│   └── useErrorHandler.ts # Tratamento de erros
-├── types/             # Definições TypeScript
-│   └── import.types.ts # Tipos da aplicação
-└── App.tsx            # Componente principal
-
+│   ├── ImportPage.tsx  # Página principal de importação
+│   └── LoginPage.tsx   # Página de login
+├── services/           # Serviços da API
+│   └── api.ts         # Cliente HTTP com interceptors
+├── types/              # Definições de tipos TypeScript
+│   └── import.types.ts # Tipos relacionados a importações
+└── theme/              # Configurações de tema
+    └── theme.ts        # Tema Material-UI personalizado
 ```
 
-## Formato do Arquivo de Importação
+## 🔧 **Configurações Avançadas**
 
-### Colunas Obrigatórias
+### **Configuração da API**
+O arquivo `src/config/environment.ts` centraliza todas as configurações:
+
+```typescript
+export const config = {
+  api: {
+    baseUrl: 'https://api.envio-boleto.olympiabank.xyz',
+    timeout: 30000,        // 30 segundos
+    retryAttempts: 3,      // Tentativas de retry
+    retryDelay: 1000,      // Delay entre tentativas
+  },
+  app: {
+    maxFileSize: 10 * 1024 * 1024, // 10MB
+    maxRows: 2000,                  // Máximo de linhas
+    pollingInterval: 2000,          // Intervalo de polling
+    sseReconnectDelay: 5000,        // Delay de reconexão SSE
+  }
+};
+```
+
+### **Modo Mock**
+Para desenvolvimento sem API real, configure:
+
+```env
+VITE_MOCK_MODE=true
+```
+
+## 📊 **Formato dos Arquivos**
+
+### **Colunas Obrigatórias**
 - `amount` - Valor do boleto (centavos ou reais)
 - `name` - Nome do cliente
-- `document` - CPF ou CNPJ (apenas dígitos)
+- `document` - CPF/CNPJ (apenas dígitos)
 - `telefone` - Telefone (apenas dígitos)
 - `email` - E-mail válido
-- `vencimento` - Data de vencimento (YYYY-MM-DD ou DD/MM/YYYY)
+- `vencimento` - Data de vencimento
 
-### Exemplo CSV
-```csv
-amount,name,document,telefone,email,vencimento
-1099,João Souza,12345678901,11988887777,joao@example.com,2025-08-20
-25990,Maria Lima,11222333000181,21999995555,maria@example.com,20/08/2025
+### **Formatos Suportados**
+- **CSV**: UTF-8, delimitador vírgula (,) ou ponto e vírgula (;)
+- **XLSX**: Primeira aba, primeira linha como cabeçalho
+
+### **Limites**
+- Máximo: 2.000 linhas por arquivo
+- Tamanho: Máximo 10MB
+- Colunas: Ordem livre, nomes devem corresponder
+
+## 🔄 **Fluxo de Importação**
+
+1. **Upload**: Usuário seleciona arquivo CSV/XLSX
+2. **Validação**: Validação em tempo real do arquivo
+3. **Envio**: Upload para API OlympiaBank
+4. **Monitoramento**: Acompanhamento via SSE ou polling
+5. **Conclusão**: Download de relatórios de sucesso e erro
+
+## 🚨 **Tratamento de Erros**
+
+### **Códigos de Erro da API**
+- `400` - Validação de arquivo
+- `401` - Não autorizado
+- `413` - Arquivo muito grande
+- `429` - Rate limit
+- `500` - Erro interno
+
+### **Retry Automático**
+- Erros 5xx: Retry automático com backoff exponencial
+- Erros 429: Retry automático após delay
+- Máximo de 3 tentativas
+
+## 🔧 **Desenvolvimento**
+
+### **Scripts Disponíveis**
+```bash
+npm run dev          # Servidor de desenvolvimento
+npm run build        # Build de produção
+npm run preview      # Preview da build
+npm run lint         # Verificação de código
 ```
 
-### Limites
-- Máximo 2.000 linhas por arquivo
-- Tamanho máximo: 10MB
-- Formatos aceitos: CSV, XLSX
+### **Estrutura de Commits**
+```
+feat: nova funcionalidade
+fix: correção de bug
+docs: documentação
+style: formatação de código
+refactor: refatoração
+test: testes
+chore: tarefas de manutenção
+```
 
-## Fluxo de Uso
+## 📱 **Responsividade**
 
-1. **Login**: Entre com seu e-mail e token de API
-2. **Upload**: Selecione ou arraste o arquivo para upload
-3. **Configuração**: Escolha delimitador (CSV) e formato de data
-4. **Envio**: Clique em "Enviar Arquivo"
-5. **Acompanhamento**: Veja o progresso em tempo real
-6. **Download**: Baixe os relatórios após conclusão
+- **Mobile First**: Design otimizado para dispositivos móveis
+- **Breakpoints**: Adaptação automática para diferentes tamanhos de tela
+- **Touch Friendly**: Interface otimizada para toque
 
-## Tratamento de Erros
+## 🔒 **Segurança**
 
-A aplicação trata os seguintes códigos de erro:
+- **Autenticação**: Bearer token via localStorage
+- **Validação**: Validação client-side e server-side
+- **Sanitização**: Limpeza automática de dados de entrada
+- **HTTPS**: Comunicação segura com a API
 
-- `INVALID_FILE_TYPE` - Arquivo não é CSV/XLSX
-- `MISSING_COLUMNS` - Colunas obrigatórias ausentes
-- `TOO_MANY_ROWS` - Mais de 2.000 linhas
-- `UNAUTHORIZED` - Token inválido
-- `PAYLOAD_TOO_LARGE` - Arquivo muito grande
-- `RATE_LIMITED` - Muitas requisições
+## 🚀 **Deploy**
 
-## Tecnologias Utilizadas
+### **Build de Produção**
+```bash
+npm run build
+```
 
-- React 18
-- TypeScript
-- Vite
-- Tailwind CSS
-- Axios
-- React Router DOM
-- React Hot Toast
-- Lucide React (ícones)
+### **Servidor Web**
+Configure seu servidor web para servir os arquivos da pasta `dist/`:
 
-## Scripts Disponíveis
+```nginx
+server {
+    listen 80;
+    server_name seu-dominio.com;
+    root /path/to/dist;
+    index index.html;
+    
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
 
-- `npm run dev` - Servidor de desenvolvimento
-- `npm run build` - Build para produção
-- `npm run preview` - Preview do build
-- `npm run lint` - Executar linter
+## 🤝 **Contribuição**
 
-## Suporte
+1. Fork o projeto
+2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
+3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
+4. Push para a branch (`git push origin feature/AmazingFeature`)
+5. Abra um Pull Request
 
-Para dúvidas ou problemas, consulte a documentação da API ou entre em contato com a equipe de desenvolvimento.
+## 📄 **Licença**
+
+Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
+
+## 📞 **Suporte**
+
+Para suporte técnico ou dúvidas:
+- Abra uma issue no GitHub
+- Entre em contato com a equipe de desenvolvimento
+
+---
+
+**Desenvolvido com ❤️ para OlympiaBank Integration**

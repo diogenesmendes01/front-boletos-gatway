@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box,
   Card,
@@ -12,6 +12,8 @@ import {
   Stack,
   CircularProgress,
   Divider,
+  Tooltip,
+  IconButton,
 } from '@mui/material';
 import {
   CheckCircle,
@@ -19,9 +21,12 @@ import {
   AccessTime,
   Download,
   Error as ErrorIcon,
+  Refresh,
+  Info,
 } from '@mui/icons-material';
 import type { ImportStatusResponse, ImportStatus as ImportStatusType } from '../types/import.types';
 import { apiService } from '../services/api';
+import { config } from '../config/environment';
 import toast from 'react-hot-toast';
 
 interface ImportStatusProps {
@@ -29,6 +34,10 @@ interface ImportStatusProps {
   onComplete?: () => void;
   useSSE?: boolean;
 }
+
+// Cache simples para status de importações
+const statusCache = new Map<string, { data: ImportStatusResponse; timestamp: number }>();
+const CACHE_TTL = 30000; // 30 segundos
 
 export const ImportStatus: React.FC<ImportStatusProps> = ({ 
   importId, 
@@ -38,11 +47,28 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
   const [status, setStatus] = useState<ImportStatusResponse | null>(null);
   const [isPolling, setIsPolling] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  const fetchStatus = useCallback(async () => {
+  const fetchStatus = useCallback(async (forceRefresh = false) => {
     try {
+      // Verificar cache primeiro
+      if (!forceRefresh && statusCache.has(importId)) {
+        const cached = statusCache.get(importId)!;
+        if (Date.now() - cached.timestamp < CACHE_TTL) {
+          setStatus(cached.data);
+          setLastUpdate(new Date(cached.timestamp));
+          return;
+        }
+      }
+
       const data = await apiService.getImportStatus(importId);
+      
+      // Atualizar cache
+      statusCache.set(importId, { data, timestamp: Date.now() });
+      
       setStatus(data);
+      setLastUpdate(new Date());
       setError(null);
 
       if (data.status === 'completed' || data.status === 'failed' || data.status === 'canceled') {
@@ -50,10 +76,22 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
         if (onComplete) onComplete();
       }
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || 'Erro ao buscar status');
+      const errorMessage = err.response?.data?.error?.message || 'Erro ao buscar status';
+      setError(errorMessage);
       console.error('Error fetching status:', err);
+      
+      // Se for erro 404, pode ser que a importação ainda não foi processada
+      if (err.response?.status === 404) {
+        toast.error('Importação não encontrada. Verifique se o ID está correto.');
+      }
     }
   }, [importId, onComplete]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchStatus(true);
+    setIsRefreshing(false);
+  };
 
   useEffect(() => {
     fetchStatus();
@@ -64,7 +102,8 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
         (data) => {
           setStatus((prev) => {
             if (!prev) return prev;
-            return {
+            
+            const updated = {
               ...prev,
               stats: {
                 ...prev.stats,
@@ -75,12 +114,19 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
               },
               etaSeconds: data.etaSeconds,
             };
+            
+            // Atualizar cache
+            statusCache.set(importId, { data: updated, timestamp: Date.now() });
+            
+            return updated;
           });
 
           if (data.status) {
             setStatus((prev) => {
               if (!prev) return prev;
-              return { ...prev, status: data.status };
+              const updated = { ...prev, status: data.status };
+              statusCache.set(importId, { data: updated, timestamp: Date.now() });
+              return updated;
             });
 
             if (data.status === 'completed' || data.status === 'failed') {
@@ -93,6 +139,7 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
         (error) => {
           console.error('SSE error, falling back to polling:', error);
           setIsPolling(true);
+          toast.error('Conexão SSE perdida. Usando atualização automática.');
         }
       );
 
@@ -102,7 +149,7 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
         if (isPolling) {
           fetchStatus();
         }
-      }, 2000);
+      }, config.app.pollingInterval);
 
       return () => clearInterval(interval);
     }
@@ -181,6 +228,27 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
     return Math.round((processed / total) * 100);
   };
 
+  const getStatusDescription = (): string => {
+    if (!status) return '';
+    
+    switch (status.status) {
+      case 'queued':
+        return 'Seu arquivo está na fila de processamento. Aguarde um momento.';
+      case 'processing':
+        return 'Seu arquivo está sendo processado. Isso pode levar alguns minutos.';
+      case 'completed':
+        return 'Processamento concluído com sucesso! Você pode baixar os resultados.';
+      case 'failed':
+        return 'O processamento falhou. Verifique os erros e tente novamente.';
+      case 'canceled':
+        return 'O processamento foi cancelado.';
+      default:
+        return '';
+    }
+  };
+
+  const progress = useMemo(() => calculateProgress(), [status?.stats]);
+
   if (error) {
     return (
       <Box sx={{ maxWidth: '800px', mx: 'auto', p: 3 }}>
@@ -189,6 +257,16 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
             Erro ao carregar status
           </Typography>
           {error}
+          <Box sx={{ mt: 2 }}>
+            <Button
+              variant="outlined"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              startIcon={<Refresh />}
+            >
+              Tentar Novamente
+            </Button>
+          </Box>
         </Alert>
       </Box>
     );
@@ -209,8 +287,6 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
     );
   }
 
-  const progress = calculateProgress();
-
   return (
     <Box sx={{ maxWidth: '800px', mx: 'auto', p: 3 }}>
       <Card elevation={3}>
@@ -220,17 +296,38 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
               <Typography variant="h4" component="h1">
                 Status da Importação
               </Typography>
-              <Chip
-                icon={getStatusIcon(status.status)}
-                label={getStatusLabel(status.status)}
-                color={getStatusColor(status.status) as any}
-                sx={{ px: 2, py: 1 }}
-              />
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Chip
+                  icon={getStatusIcon(status.status)}
+                  label={getStatusLabel(status.status)}
+                  color={getStatusColor(status.status) as any}
+                  sx={{ px: 2, py: 1 }}
+                />
+                <Tooltip title="Atualizar status">
+                  <IconButton
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    size="small"
+                  >
+                    <Refresh />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
             </Stack>
             
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               ID: {importId}
             </Typography>
+
+            <Alert severity="info" icon={<Info />} sx={{ mb: 2 }}>
+              {getStatusDescription()}
+            </Alert>
+
+            {lastUpdate && (
+              <Typography variant="caption" color="text.secondary">
+                Última atualização: {lastUpdate.toLocaleString('pt-BR')}
+              </Typography>
+            )}
           </Box>
 
           <Box sx={{ mb: 4 }}>

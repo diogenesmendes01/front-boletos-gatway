@@ -14,15 +14,21 @@ import {
   Collapse,
   Alert,
   AlertTitle,
+  Chip,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
 import {
   Description,
   History,
   Logout,
   Info,
+  Refresh,
+  Add,
 } from '@mui/icons-material';
 import { FileUpload } from '../components/FileUpload';
 import { ImportStatus } from '../components/ImportStatus';
+import { useImportManager } from '../hooks/useImportManager';
 import { apiService } from '../services/api';
 import { useErrorHandler } from '../hooks/useErrorHandler';
 import toast from 'react-hot-toast';
@@ -35,25 +41,24 @@ interface UploadOptions {
 }
 
 export const ImportPage: React.FC = () => {
-  const [isUploading, setIsUploading] = useState(false);
-  const [currentImportId, setCurrentImportId] = useState<string | null>(null);
-  const [importHistory, setImportHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const { handleError } = useErrorHandler();
+  
+  const {
+    imports,
+    currentImport,
+    isUploading,
+    uploadFile,
+    selectImport,
+    clearCurrentImport,
+    refreshImport,
+  } = useImportManager();
 
   const handleUpload = async (file: File, options: UploadOptions) => {
-    setIsUploading(true);
-    
     try {
-      const response = await apiService.uploadImport(file, options);
-      toast.success('Arquivo enviado com sucesso!');
-      setCurrentImportId(response.importId);
-      
-      setImportHistory(prev => [response.importId, ...prev].slice(0, 10));
+      await uploadFile(file, options);
     } catch (error) {
       handleError(error);
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -62,7 +67,7 @@ export const ImportPage: React.FC = () => {
   };
 
   const handleNewImport = () => {
-    setCurrentImportId(null);
+    clearCurrentImport();
   };
 
   const handleLogout = () => {
@@ -71,8 +76,35 @@ export const ImportPage: React.FC = () => {
   };
 
   const selectHistoryItem = (importId: string) => {
-    setCurrentImportId(importId);
+    selectImport(importId);
     setShowHistory(false);
+  };
+
+  const handleRefreshAll = async () => {
+    if (currentImport) {
+      await refreshImport(currentImport.importId);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'success';
+      case 'failed': return 'error';
+      case 'processing': return 'primary';
+      case 'queued': return 'warning';
+      default: return 'default';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    const labels = {
+      queued: 'Na fila',
+      processing: 'Processando',
+      completed: 'Concluído',
+      failed: 'Falhou',
+      canceled: 'Cancelado',
+    };
+    return labels[status as keyof typeof labels] || status;
   };
 
   return (
@@ -99,9 +131,9 @@ export const ImportPage: React.FC = () => {
               sx={{ mr: 1 }}
             >
               Histórico
-              {importHistory.length > 0 && (
+              {imports.length > 0 && (
                 <Badge
-                  badgeContent={importHistory.length}
+                  badgeContent={imports.length}
                   color="primary"
                   sx={{ ml: 1 }}
                 />
@@ -121,33 +153,53 @@ export const ImportPage: React.FC = () => {
       </AppBar>
 
       <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Collapse in={showHistory && importHistory.length > 0}>
+        <Collapse in={showHistory && imports.length > 0}>
           <Card sx={{ mb: 3 }} elevation={2}>
             <CardContent>
-              <Typography variant="h6" gutterBottom fontWeight="bold">
-                Importações Recentes
-              </Typography>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+                <Typography variant="h6" fontWeight="bold">
+                  Importações Recentes
+                </Typography>
+                <Tooltip title="Atualizar todas">
+                  <IconButton onClick={handleRefreshAll} size="small">
+                    <Refresh />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
               <Stack spacing={1}>
-                {importHistory.map((id) => (
+                {imports.map((importItem) => (
                   <Button
-                    key={id}
-                    onClick={() => selectHistoryItem(id)}
+                    key={importItem.importId}
+                    onClick={() => selectHistoryItem(importItem.importId)}
                     variant="outlined"
                     sx={{
-                      justifyContent: 'flex-start',
+                      justifyContent: 'space-between',
                       textAlign: 'left',
                       p: 2,
+                      borderColor: currentImport?.importId === importItem.importId ? 'primary.main' : 'divider',
                     }}
                     fullWidth
                   >
                     <Box>
                       <Typography variant="body2" fontWeight="medium">
-                        Import ID: {id.substring(0, 8)}...
+                        {importItem.fileName}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        Clique para ver detalhes
+                        {importItem.uploadedAt.toLocaleString('pt-BR')}
                       </Typography>
                     </Box>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Chip
+                        label={getStatusLabel(importItem.status)}
+                        color={getStatusColor(importItem.status) as any}
+                        size="small"
+                      />
+                      {importItem.stats && (
+                        <Typography variant="caption" color="text.secondary">
+                          {importItem.stats.succeeded}/{importItem.stats.total}
+                        </Typography>
+                      )}
+                    </Stack>
                   </Button>
                 ))}
               </Stack>
@@ -155,7 +207,7 @@ export const ImportPage: React.FC = () => {
           </Card>
         </Collapse>
 
-        {!currentImportId ? (
+        {!currentImport ? (
           <Box>
             <FileUpload 
               onUpload={handleUpload} 
@@ -224,6 +276,7 @@ export const ImportPage: React.FC = () => {
                 onClick={handleNewImport}
                 variant="contained"
                 size="large"
+                startIcon={<Add />}
                 sx={{ px: 4, py: 1.5 }}
               >
                 Nova Importação
@@ -231,7 +284,7 @@ export const ImportPage: React.FC = () => {
             </Box>
             
             <ImportStatus
-              importId={currentImportId}
+              importId={currentImport.importId}
               onComplete={handleComplete}
               useSSE={true}
             />

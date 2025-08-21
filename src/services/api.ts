@@ -1,9 +1,7 @@
 import axios from 'axios';
-import type { AxiosInstance } from 'axios';
+import type { AxiosInstance, AxiosError } from 'axios';
 import type { ImportResponse, ImportStatusResponse } from '../types/import.types';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.seudominio.com';
-const IS_MOCK_MODE = import.meta.env.VITE_MOCK_MODE === 'true' || import.meta.env.DEV;
+import { config } from '../config/environment';
 
 class ApiService {
   private client: AxiosInstance;
@@ -11,12 +9,18 @@ class ApiService {
 
   constructor() {
     this.client = axios.create({
-      baseURL: API_BASE_URL,
+      baseURL: config.api.baseUrl,
+      timeout: config.api.timeout,
       headers: {
         'Content-Type': 'application/json',
       },
     });
 
+    this.setupInterceptors();
+  }
+
+  private setupInterceptors() {
+    // Interceptor de requisição para adicionar token
     this.client.interceptors.request.use((config) => {
       const token = localStorage.getItem('token');
       if (token) {
@@ -25,16 +29,62 @@ class ApiService {
       return config;
     });
 
+    // Interceptor de resposta com retry automático
     this.client.interceptors.response.use(
       (response) => response,
-      (error) => {
-        if (error.response?.status === 401) {
-          localStorage.removeItem('token');
-          window.location.href = '/login';
+      async (error: AxiosError) => {
+        const originalRequest = error.config as any;
+        
+        // Retry automático para erros 5xx e 429
+        if (this.shouldRetry(error) && !originalRequest._retry) {
+          originalRequest._retry = true;
+          
+          try {
+            await this.delay(config.api.retryDelay);
+            return await this.client.request(originalRequest);
+          } catch (retryError) {
+            console.error('Retry failed:', retryError);
+          }
         }
+
+        // Tratamento específico de erros
+        this.handleApiError(error);
         return Promise.reject(error);
       }
     );
+  }
+
+  private shouldRetry(error: AxiosError): boolean {
+    const status = error.response?.status;
+    return status === 429 || (status !== undefined && status >= 500);
+  }
+
+  private handleApiError(error: AxiosError) {
+    const status = error.response?.status;
+    const errorData = error.response?.data as any;
+
+    switch (status) {
+      case 401:
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        break;
+      case 400:
+        if (errorData?.error?.code) {
+          console.error(`API Validation Error ${errorData.error.code}:`, errorData.error.message);
+        }
+        break;
+      case 413:
+        console.error('Arquivo muito grande para upload');
+        break;
+      case 429:
+        console.error('Rate limit excedido, tente novamente mais tarde');
+        break;
+      case 500:
+        console.error('Erro interno do servidor');
+        break;
+      default:
+        console.error('Erro na API:', error.message);
+    }
   }
 
   async uploadImport(
@@ -46,7 +96,7 @@ class ApiService {
       webhookUrl?: string;
     }
   ): Promise<ImportResponse> {
-    if (IS_MOCK_MODE) {
+    if (config.app.mockMode) {
       return this.mockUploadImport(file, options);
     }
 
@@ -87,7 +137,7 @@ class ApiService {
   }
 
   async getImportStatus(importId: string): Promise<ImportStatusResponse> {
-    if (IS_MOCK_MODE) {
+    if (config.app.mockMode) {
       return this.mockGetImportStatus(importId);
     }
 
@@ -96,7 +146,7 @@ class ApiService {
   }
 
   async downloadResults(importId: string): Promise<Blob> {
-    if (IS_MOCK_MODE) {
+    if (config.app.mockMode) {
       return this.mockDownloadResults(importId);
     }
 
@@ -107,7 +157,7 @@ class ApiService {
   }
 
   async downloadErrors(importId: string): Promise<Blob> {
-    if (IS_MOCK_MODE) {
+    if (config.app.mockMode) {
       return this.mockDownloadErrors(importId);
     }
 
@@ -122,34 +172,53 @@ class ApiService {
     onMessage: (data: any) => void,
     onError?: (error: Event) => void
   ): () => void {
-    if (IS_MOCK_MODE) {
+    if (config.app.mockMode) {
       return this.mockSubscribeToProgress(importId, onMessage, onError);
     }
 
-    // Token is included in Authorization header via interceptor
-    const eventSource = new EventSource(
-      `${API_BASE_URL}/v1/imports/${importId}/events`,
-      {
-        withCredentials: false,
-      }
-    );
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 3;
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        onMessage(data);
-      } catch (error) {
-        console.error('Error parsing SSE data:', error);
-      }
+    const createEventSource = () => {
+      const eventSource = new EventSource(
+        `${config.api.baseUrl}/v1/imports/${importId}/events`,
+        { withCredentials: false }
+      );
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          onMessage(data);
+        } catch (error) {
+          console.error('Error parsing SSE data:', error);
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('SSE connection error:', error);
+        eventSource.close();
+        
+        // Tentar reconectar automaticamente
+        if (reconnectAttempts < maxReconnectAttempts) {
+          reconnectAttempts++;
+          setTimeout(() => {
+            console.log(`Tentando reconectar SSE (tentativa ${reconnectAttempts})...`);
+            createEventSource();
+          }, config.app.sseReconnectDelay);
+        } else {
+          console.error('Máximo de tentativas de reconexão SSE atingido');
+          if (onError) onError(error);
+        }
+      };
+
+      return eventSource;
     };
 
-    eventSource.onerror = (error) => {
-      console.error('SSE connection error:', error);
-      if (onError) onError(error);
+    const eventSource = createEventSource();
+
+    return () => {
       eventSource.close();
     };
-
-    return () => eventSource.close();
   }
 
   setToken(token: string): void {

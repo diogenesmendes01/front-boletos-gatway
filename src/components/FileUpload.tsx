@@ -22,14 +22,17 @@ import {
   IconButton,
   LinearProgress,
   Stack,
+  Chip,
 } from '@mui/material';
 import {
   CloudUpload,
   InsertDriveFile,
   Close,
   Info,
+  Warning,
 } from '@mui/icons-material';
 import toast from 'react-hot-toast';
+import { config } from '../config/environment';
 
 interface FileUploadProps {
   onUpload: (file: File, options: UploadOptions) => void;
@@ -43,9 +46,12 @@ interface UploadOptions {
   webhookUrl?: string;
 }
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const MAX_ROWS = 2000;
-const ALLOWED_EXTENSIONS = ['.csv', '.xlsx'];
+interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+  previewData: string[][];
+}
 
 export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -53,59 +59,85 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
   const [dateFormat, setDateFormat] = useState<'YYYY-MM-DD' | 'DD/MM/YYYY'>('YYYY-MM-DD');
   const [webhookUrl, setWebhookUrl] = useState('');
   const [dragActive, setDragActive] = useState(false);
-  const [previewData, setPreviewData] = useState<string[][]>([]);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const validateFile = (file: File): string | null => {
-    const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+  const validateFile = (file: File): string[] => {
+    const errors: string[] = [];
     
-    if (!ALLOWED_EXTENSIONS.includes(extension)) {
-      return `Tipo de arquivo inválido. Use apenas ${ALLOWED_EXTENSIONS.join(' ou ')}`;
+    const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (!config.validation.allowedExtensions.includes(extension)) {
+      errors.push(`Tipo de arquivo inválido. Use apenas ${config.validation.allowedExtensions.join(' ou ')}`);
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      return 'Arquivo muito grande. Tamanho máximo: 10MB';
+    if (file.size > config.app.maxFileSize) {
+      const maxSizeMB = config.app.maxFileSize / (1024 * 1024);
+      errors.push(`Arquivo muito grande. Tamanho máximo: ${maxSizeMB}MB`);
     }
 
-    return null;
+    return errors;
   };
 
-  const validateCSVHeaders = async (file: File): Promise<boolean> => {
-    const requiredHeaders = ['amount', 'name', 'document', 'telefone', 'email', 'vencimento'];
-    
+  const validateFileContent = async (file: File): Promise<ValidationResult> => {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    let previewData: string[][] = [];
+
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target?.result as string;
-        const lines = text.split('\n');
+        const lines = text.split('\n').filter(line => line.trim());
         
         if (lines.length === 0) {
-          toast.error('Arquivo vazio');
-          resolve(false);
+          errors.push('Arquivo vazio');
+          resolve({ isValid: false, errors, warnings, previewData });
           return;
         }
 
-        if (lines.length > MAX_ROWS + 1) {
-          toast.error(`Arquivo excede o limite de ${MAX_ROWS} linhas`);
-          resolve(false);
-          return;
+        if (lines.length > config.app.maxRows + 1) {
+          errors.push(`Arquivo excede o limite de ${config.app.maxRows} linhas`);
         }
 
         const headers = lines[0].toLowerCase().split(delimiter).map(h => h.trim());
-        const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+        const missingHeaders = config.validation.requiredHeaders.filter(h => !headers.includes(h));
         
         if (missingHeaders.length > 0) {
-          toast.error(`Colunas obrigatórias ausentes: ${missingHeaders.join(', ')}`);
-          resolve(false);
-          return;
+          errors.push(`Colunas obrigatórias ausentes: ${missingHeaders.join(', ')}`);
         }
 
-        const preview = lines.slice(0, 5).map(line => line.split(delimiter));
-        setPreviewData(preview);
+        // Verificar se há colunas extras
+        const extraHeaders = headers.filter(h => !config.validation.requiredHeaders.includes(h));
+        if (extraHeaders.length > 0) {
+          warnings.push(`Colunas extras detectadas: ${extraHeaders.join(', ')}`);
+        }
 
-        resolve(true);
+        // Validar formato das primeiras linhas de dados
+        if (lines.length > 1) {
+          const dataLines = lines.slice(1, Math.min(6, lines.length));
+          previewData = [headers, ...dataLines.map(line => line.split(delimiter))];
+          
+          // Validação básica de dados
+          dataLines.forEach((line, index) => {
+            const cells = line.split(delimiter);
+            if (cells.length !== headers.length) {
+              warnings.push(`Linha ${index + 2}: número de colunas inconsistente`);
+            }
+          });
+        }
+
+        const isValid = errors.length === 0;
+        resolve({ isValid, errors, warnings, previewData });
       };
-      reader.readAsText(file);
+      
+      if (file.name.endsWith('.csv')) {
+        reader.readAsText(file);
+      } else {
+        // Para XLSX, assumimos que é válido e validamos no backend
+        previewData = [config.validation.requiredHeaders];
+        resolve({ isValid: true, errors, warnings, previewData });
+      }
     });
   };
 
@@ -130,20 +162,35 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
   };
 
   const handleFile = async (file: File) => {
-    const error = validateFile(file);
-    if (error) {
-      toast.error(error);
-      return;
-    }
+    setIsValidating(true);
+    
+    try {
+      const fileErrors = validateFile(file);
+      if (fileErrors.length > 0) {
+        fileErrors.forEach(error => toast.error(error));
+        return;
+      }
 
-    setSelectedFile(file);
+      setSelectedFile(file);
+      const validation = await validateFileContent(file);
+      setValidationResult(validation);
 
-    if (file.name.endsWith('.csv')) {
-      const isValid = await validateCSVHeaders(file);
-      if (!isValid) {
+      if (!validation.isValid) {
+        validation.errors.forEach(error => toast.error(error));
         setSelectedFile(null);
         return;
       }
+
+      if (validation.warnings.length > 0) {
+        validation.warnings.forEach(warning => toast(warning, { icon: '⚠️' }));
+      }
+
+      toast.success('Arquivo validado com sucesso!');
+    } catch (error) {
+      toast.error('Erro ao validar arquivo');
+      console.error('Validation error:', error);
+    } finally {
+      setIsValidating(false);
     }
   };
 
@@ -154,7 +201,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
   };
 
   const handleUpload = () => {
-    if (!selectedFile) return;
+    if (!selectedFile || !validationResult?.isValid) return;
 
     const options: UploadOptions = {
       fileType: selectedFile.name.endsWith('.xlsx') ? 'xlsx' : 'csv',
@@ -171,7 +218,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
 
   const removeFile = () => {
     setSelectedFile(null);
-    setPreviewData([]);
+    setValidationResult(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -183,6 +230,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
     const sizes = ['Bytes', 'KB', 'MB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const getValidationStatusColor = () => {
+    if (!validationResult) return 'default';
+    if (validationResult.isValid) return 'success';
+    return 'error';
   };
 
   return (
@@ -220,7 +273,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
               type="file"
               accept=".csv,.xlsx"
               onChange={handleFileSelect}
-              disabled={isUploading}
+              disabled={isUploading || isValidating}
               style={{ display: 'none' }}
             />
 
@@ -235,13 +288,21 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                     <Typography variant="body2" color="text.secondary">
                       {formatFileSize(selectedFile.size)}
                     </Typography>
+                    {validationResult && (
+                      <Chip
+                        label={validationResult.isValid ? 'Válido' : 'Inválido'}
+                        color={getValidationStatusColor()}
+                        size="small"
+                        sx={{ mt: 1 }}
+                      />
+                    )}
                   </Box>
                   <IconButton
                     onClick={(e) => {
                       e.stopPropagation();
                       removeFile();
                     }}
-                    disabled={isUploading}
+                    disabled={isUploading || isValidating}
                     color="error"
                   >
                     <Close />
@@ -261,18 +322,27 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                   variant="contained"
                   component="span"
                   startIcon={<CloudUpload />}
-                  disabled={isUploading}
+                  disabled={isUploading || isValidating}
                 >
                   Selecionar Arquivo
                 </Button>
                 <Typography variant="caption" display="block" sx={{ mt: 2 }}>
-                  CSV ou XLSX • Máx. 2.000 linhas • Máx. 10MB
+                  CSV ou XLSX • Máx. {config.app.maxRows} linhas • Máx. {config.app.maxFileSize / (1024 * 1024)}MB
                 </Typography>
               </Box>
             )}
           </Paper>
 
-          {selectedFile && (
+          {(isValidating || isUploading) && (
+            <Box sx={{ mt: 2 }}>
+              <LinearProgress />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                {isValidating ? 'Validando arquivo...' : 'Enviando arquivo...'}
+              </Typography>
+            </Box>
+          )}
+
+          {selectedFile && validationResult?.isValid && (
             <Box sx={{ mt: 3 }}>
               <Stack spacing={3}>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
@@ -284,8 +354,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                       onChange={(e) => setDelimiter(e.target.value as ',' | ';')}
                       disabled={selectedFile.name.endsWith('.xlsx') || isUploading}
                     >
-                      <MenuItem value=",">Vírgula (,)</MenuItem>
-                      <MenuItem value=";">Ponto e vírgula (;)</MenuItem>
+                      {config.validation.supportedDelimiters.map(d => (
+                        <MenuItem key={d} value={d}>
+                          {d === ',' ? 'Vírgula (,)' : 'Ponto e vírgula (;)'}
+                        </MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
 
@@ -297,8 +370,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                       onChange={(e) => setDateFormat(e.target.value as 'YYYY-MM-DD' | 'DD/MM/YYYY')}
                       disabled={isUploading}
                     >
-                      <MenuItem value="YYYY-MM-DD">AAAA-MM-DD</MenuItem>
-                      <MenuItem value="DD/MM/YYYY">DD/MM/AAAA</MenuItem>
+                      {config.validation.supportedDateFormats.map(format => (
+                        <MenuItem key={format} value={format}>
+                          {format === 'YYYY-MM-DD' ? 'AAAA-MM-DD' : 'DD/MM/AAAA'}
+                        </MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
                 </Stack>
@@ -311,10 +387,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                   onChange={(e) => setWebhookUrl(e.target.value)}
                   placeholder="https://exemplo.com/webhook"
                   disabled={isUploading}
+                  helperText="URL para notificação quando o processamento for concluído"
                 />
               </Stack>
 
-              {previewData.length > 0 && (
+              {validationResult.previewData.length > 0 && (
                 <Box sx={{ mt: 3 }}>
                   <Typography variant="h6" gutterBottom>
                     Prévia do arquivo:
@@ -323,7 +400,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                     <Table size="small">
                       <TableHead>
                         <TableRow>
-                          {previewData[0]?.map((header, index) => (
+                          {validationResult.previewData[0]?.map((header, index) => (
                             <TableCell key={index} sx={{ fontWeight: 'bold' }}>
                               {header}
                             </TableCell>
@@ -331,7 +408,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {previewData.slice(1, 3).map((row, rowIndex) => (
+                        {validationResult.previewData.slice(1, 4).map((row, rowIndex) => (
                           <TableRow key={rowIndex}>
                             {row.map((cell, cellIndex) => (
                               <TableCell key={cellIndex}>{cell}</TableCell>
@@ -344,30 +421,34 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                 </Box>
               )}
 
+              {validationResult.warnings.length > 0 && (
+                <Alert severity="warning" sx={{ mt: 3 }} icon={<Warning />}>
+                  <AlertTitle>Atenção</AlertTitle>
+                  <Typography variant="body2">
+                    {validationResult.warnings.map((warning, index) => (
+                      <Box key={index} component="span" display="block">
+                        • {warning}
+                      </Box>
+                    ))}
+                  </Typography>
+                </Alert>
+              )}
+
               <Alert severity="info" sx={{ mt: 3 }} icon={<Info />}>
                 <AlertTitle>Formato obrigatório do arquivo</AlertTitle>
                 <Typography variant="body2">
                   • Primeira linha: cabeçalho com colunas obrigatórias<br />
-                  • Colunas: <strong>amount, name, document, telefone, email, vencimento</strong><br />
-                  • Máximo de 2.000 linhas de dados
+                  • Colunas: <strong>{config.validation.requiredHeaders.join(', ')}</strong><br />
+                  • Máximo de {config.app.maxRows} linhas de dados
                 </Typography>
               </Alert>
-
-              {isUploading && (
-                <Box sx={{ mt: 2 }}>
-                  <LinearProgress />
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    Enviando arquivo...
-                  </Typography>
-                </Box>
-              )}
 
               <Button
                 fullWidth
                 size="large"
                 variant="contained"
                 onClick={handleUpload}
-                disabled={isUploading}
+                disabled={isUploading || isValidating}
                 startIcon={<CloudUpload />}
                 sx={{ mt: 3, py: 1.5 }}
               >
