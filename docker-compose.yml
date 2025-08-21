@@ -14,7 +14,7 @@ services:
       - VITE_APP_ENVIRONMENT=${VITE_APP_ENVIRONMENT:-production}
     restart: unless-stopped
     networks:
-      - olympiabank-network
+      - proxy-network
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
       interval: 30s
@@ -31,6 +31,6 @@ services:
         max-file: "3"
 
 networks:
-  olympiabank-network:
-    driver: bridge
-    name: olympiabank-network
+  proxy-network:
+    external: true
+    name: proxy-network
