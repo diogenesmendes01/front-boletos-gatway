@@ -19,18 +19,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24.5.0'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build with Vite
-        run: npm run build
-
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -46,16 +34,28 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 168.231.92.229
-          username: ${{ secrets.VPS_USER}}
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          # se usar porta diferente de 22, adicione:
+          # port: ${{ secrets.VPS_PORT }}
+          script_stop: true
+          envs: GHCR_USER,GHCR_TOKEN
           script: |
+            # login no GHCR (caso imagem seja privada)
+            if [ -n "$GHCR_USER" ] && [ -n "$GHCR_TOKEN" ]; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            fi
+
             cd /opt/front-boletos-getway
-            docker-compose pull
-            docker-compose up -d
+            if docker compose version >/dev/null 2>&1; then COMPOSE="docker compose"; else COMPOSE="docker-compose"; fi
+            $COMPOSE pull
+            $COMPOSE up -d
             docker image prune -f

@@ -2,22 +2,16 @@ version: '3.8'
 
 services:
   frontend:
-    image: ghcr.io/${GITHUB_REPOSITORY:-olympiabank/front-boletos-gatway}-frontend:latest
-    container_name: olympiabank-frontend
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://api.envio-boleto.olympiabank.xyz}
-        - VITE_MOCK_MODE=${VITE_MOCK_MODE:-false}
-        - VITE_APP_ENVIRONMENT=${VITE_APP_ENVIRONMENT:-production}
-        - BUILD_DATE=${BUILD_DATE:-now}
-        - VERSION=${VERSION:-latest}
+    image: ghcr.io/diogenesmendes01/front-boletos-gatway:latest
+    container_name: front-boletos-getway
     ports:
       - "${PORT:-3000}:80"
     environment:
       - NODE_ENV=production
       - TZ=America/Sao_Paulo
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://api.envio-boleto.olympiabank.xyz}
+      - VITE_MOCK_MODE=${VITE_MOCK_MODE:-false}
+      - VITE_APP_ENVIRONMENT=${VITE_APP_ENVIRONMENT:-production}
     restart: unless-stopped
     networks:
       - olympiabank-network
