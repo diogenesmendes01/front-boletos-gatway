@@ -35,8 +35,9 @@ import toast from 'react-hot-toast';
 
 interface UploadOptions {
   fileType?: 'csv' | 'xlsx';
-  delimiter?: ',' | ';';
-  dateFormat?: 'YYYY-MM-DD' | 'DD/MM/YYYY';
+  delimiter?: ',' | ';' | '\t' | '|';
+  dateFormat?: 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'DD-MM-YYYY' | 'DD.MM.YYYY' | 'DD/MM/YY' | 'DD-MM-YY' | 'DD.MM.YY';
+  decimalSeparator?: ',' | '.';
   webhookUrl?: string;
 }
 
@@ -72,8 +73,11 @@ export const ImportPage: React.FC = () => {
 
   const handleLogout = () => {
     apiService.clearToken();
+    toast.success('Logout realizado com sucesso!');
     window.location.href = '/login';
   };
+
+  const userEmail = apiService.getUserEmail();
 
   const selectHistoryItem = (importId: string) => {
     selectImport(importId);
@@ -120,6 +124,11 @@ export const ImportPage: React.FC = () => {
               <Typography variant="caption" color="text.secondary">
                 OlympiaBank Integration
               </Typography>
+              {userEmail && (
+                <Typography variant="caption" color="primary.main" sx={{ display: 'block', mt: 0.5 }}>
+                  Usuário: {userEmail}
+                </Typography>
+              )}
             </Box>
           </Stack>
           

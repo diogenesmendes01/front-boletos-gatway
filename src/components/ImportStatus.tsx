@@ -35,6 +35,15 @@ interface ImportStatusProps {
   useSSE?: boolean;
 }
 
+interface SSEProgressData {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  remaining: number;
+  etaSeconds: number;
+  status?: string;
+}
+
 // Cache simples para status de importações
 const statusCache = new Map<string, { data: ImportStatusResponse; timestamp: number }>();
 const CACHE_TTL = 30000; // 30 segundos
@@ -99,7 +108,7 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
     if (useSSE) {
       const unsubscribe = apiService.subscribeToProgress(
         importId,
-        (data) => {
+        (data: SSEProgressData) => {
           setStatus((prev) => {
             if (!prev) return prev;
             
@@ -124,7 +133,7 @@ export const ImportStatus: React.FC<ImportStatusProps> = ({
           if (data.status) {
             setStatus((prev) => {
               if (!prev) return prev;
-              const updated = { ...prev, status: data.status };
+              const updated = { ...prev, status: data.status as ImportStatusType };
               statusCache.set(importId, { data: updated, timestamp: Date.now() });
               return updated;
             });

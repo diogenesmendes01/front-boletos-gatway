@@ -16,7 +16,7 @@ const parseNumber = (value: string | undefined, defaultValue: number): number =>
 
 export const config = {
   api: {
-    baseUrl: import.meta.env.VITE_API_BASE_URL || 'https://api.envio-boleto.olympiabank.xyz',
+    baseUrl: import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '' : 'https://api.envio-boleto.olympiabank.xyz'),
     timeout: parseNumber(import.meta.env.VITE_API_TIMEOUT, 30000),
     retryAttempts: parseNumber(import.meta.env.VITE_API_RETRY_ATTEMPTS, 3),
     retryDelay: parseNumber(import.meta.env.VITE_API_RETRY_DELAY, 1000),
@@ -25,7 +25,7 @@ export const config = {
     name: import.meta.env.VITE_APP_NAME || 'Importador de Boletos',
     version: import.meta.env.VITE_APP_VERSION || '1.0.0',
     environment: import.meta.env.VITE_APP_ENVIRONMENT || 'development',
-    mockMode: parseBoolean(import.meta.env.VITE_MOCK_MODE, import.meta.env.DEV),
+    mockMode: parseBoolean(import.meta.env.VITE_MOCK_MODE, false), // Desativado para testar BE real
     debugMode: parseBoolean(import.meta.env.VITE_DEBUG_MODE, import.meta.env.DEV),
     logLevel: (import.meta.env.VITE_LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error',
     maxFileSize: parseNumber(import.meta.env.VITE_MAX_FILE_SIZE, 10 * 1024 * 1024), // 10MB
@@ -41,9 +41,10 @@ export const config = {
   },
   validation: {
     allowedExtensions: ['.csv', '.xlsx'] as string[],
-    requiredHeaders: ['amount', 'name', 'document', 'telefone', 'email', 'vencimento'] as string[],
-    supportedDateFormats: ['YYYY-MM-DD', 'DD/MM/YYYY'] as const,
-    supportedDelimiters: [',', ';'] as const,
+    requiredHeaders: ['name', 'document', 'publicarea', 'number', 'neighborhood', 'city', 'state', 'postalcode', 'amount', 'duedate', 'description'] as string[],
+    supportedDateFormats: ['YYYY-MM-DD', 'DD/MM/YYYY', 'DD-MM-YYYY', 'DD.MM.YYYY', 'DD/MM/YY', 'DD-MM-YY', 'DD.MM.YY'] as const,
+    supportedDelimiters: [';', ',', '\t', '|'] as const,
+    supportedDecimalSeparators: [',', '.'] as const,
   },
   security: {
     enableCSP: parseBoolean(import.meta.env.VITE_ENABLE_CSP, false),

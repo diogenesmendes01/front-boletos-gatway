@@ -41,8 +41,9 @@ interface FileUploadProps {
 
 interface UploadOptions {
   fileType?: 'csv' | 'xlsx';
-  delimiter?: ',' | ';';
-  dateFormat?: 'YYYY-MM-DD' | 'DD/MM/YYYY';
+  delimiter?: ',' | ';' | '\t' | '|';
+  dateFormat?: 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'DD-MM-YYYY' | 'DD.MM.YYYY' | 'DD/MM/YY' | 'DD-MM-YY' | 'DD.MM.YY';
+  decimalSeparator?: ',' | '.';
   webhookUrl?: string;
 }
 
@@ -55,8 +56,26 @@ interface ValidationResult {
 
 export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading }) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [delimiter, setDelimiter] = useState<',' | ';'>(',');
-  const [dateFormat, setDateFormat] = useState<'YYYY-MM-DD' | 'DD/MM/YYYY'>('YYYY-MM-DD');
+  const [delimiter, setDelimiter] = useState<',' | ';' | '\t' | '|'>(';');
+  const [dateFormat, setDateFormat] = useState<'YYYY-MM-DD' | 'DD/MM/YYYY' | 'DD-MM-YYYY' | 'DD.MM.YYYY' | 'DD/MM/YY' | 'DD-MM-YY' | 'DD.MM.YY'>('YYYY-MM-DD');
+  const [decimalSeparator, setDecimalSeparator] = useState<',' | '.'>(',');
+  
+  // Função para detectar automaticamente o delimitador
+  const detectDelimiter = (content: string): ',' | ';' | '\t' | '|' => {
+    const firstLine = content.split('\n')[0];
+    const delimiters = config.validation.supportedDelimiters;
+    
+    for (const delim of delimiters) {
+      if (firstLine.includes(delim)) {
+        const parts = firstLine.split(delim);
+        if (parts.length >= config.validation.requiredHeaders.length) {
+          return delim;
+        }
+      }
+    }
+    
+    return ';'; // Padrão brasileiro
+  };
   const [webhookUrl, setWebhookUrl] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
@@ -100,11 +119,34 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
           errors.push(`Arquivo excede o limite de ${config.app.maxRows} linhas`);
         }
 
-        const headers = lines[0].toLowerCase().split(delimiter).map(h => h.trim());
-        const missingHeaders = config.validation.requiredHeaders.filter(h => !headers.includes(h));
+        // Detectar delimitador automaticamente
+        const detectedDelimiter = detectDelimiter(text);
+        if (detectedDelimiter !== delimiter) {
+          console.log(`🔄 Delimitador detectado: ${detectedDelimiter}, ajustando...`);
+          setDelimiter(detectedDelimiter);
+        }
+
+        const headers = lines[0].toLowerCase().split(detectedDelimiter).map(h => h.trim());
+        
+        // Debug: log dos cabeçalhos encontrados e esperados
+        console.log('🔍 Cabeçalhos encontrados:', headers);
+        console.log('🔍 Cabeçalhos esperados:', config.validation.requiredHeaders);
+        console.log('🔍 Delimitador usado:', detectedDelimiter);
+        console.log('🔍 Linha original:', lines[0]);
+        
+        // Validação mais robusta - verificar se há correspondência parcial
+        const missingHeaders = config.validation.requiredHeaders.filter(requiredHeader => {
+          const found = headers.some(header => 
+            header === requiredHeader || 
+            header.includes(requiredHeader) || 
+            requiredHeader.includes(header)
+          );
+          return !found;
+        });
         
         if (missingHeaders.length > 0) {
           errors.push(`Colunas obrigatórias ausentes: ${missingHeaders.join(', ')}`);
+          console.log('❌ Cabeçalhos ausentes:', missingHeaders);
         }
 
         // Verificar se há colunas extras
@@ -116,11 +158,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
         // Validar formato das primeiras linhas de dados
         if (lines.length > 1) {
           const dataLines = lines.slice(1, Math.min(6, lines.length));
-          previewData = [headers, ...dataLines.map(line => line.split(delimiter))];
+          previewData = [headers, ...dataLines.map(line => line.split(detectedDelimiter))];
           
           // Validação básica de dados
           dataLines.forEach((line, index) => {
-            const cells = line.split(delimiter);
+            const cells = line.split(detectedDelimiter);
             if (cells.length !== headers.length) {
               warnings.push(`Linha ${index + 2}: número de colunas inconsistente`);
             }
@@ -207,6 +249,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
       fileType: selectedFile.name.endsWith('.xlsx') ? 'xlsx' : 'csv',
       delimiter,
       dateFormat,
+      decimalSeparator,
     };
 
     if (webhookUrl.trim()) {
@@ -329,6 +372,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                 <Typography variant="caption" display="block" sx={{ mt: 2 }}>
                   CSV ou XLSX • Máx. {config.app.maxRows} linhas • Máx. {config.app.maxFileSize / (1024 * 1024)}MB
                 </Typography>
+                <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.secondary' }}>
+                  Colunas obrigatórias: name, document, publicArea, number, neighborhood, city, state, postalCode, amount, dueDate, description
+                </Typography>
               </Box>
             )}
           </Paper>
@@ -351,12 +397,15 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                     <Select
                       value={delimiter}
                       label="Delimitador (CSV)"
-                      onChange={(e) => setDelimiter(e.target.value as ',' | ';')}
+                      onChange={(e) => setDelimiter(e.target.value as ',' | ';' | '\t' | '|')}
                       disabled={selectedFile.name.endsWith('.xlsx') || isUploading}
                     >
                       {config.validation.supportedDelimiters.map(d => (
                         <MenuItem key={d} value={d}>
-                          {d === ',' ? 'Vírgula (,)' : 'Ponto e vírgula (;)'}
+                          {d === ',' ? 'Vírgula (,)' : 
+                           d === ';' ? 'Ponto e vírgula (;)' :
+                           d === '\t' ? 'Tabulação (Tab)' :
+                           d === '|' ? 'Barra vertical (|)' : d}
                         </MenuItem>
                       ))}
                     </Select>
@@ -367,12 +416,34 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                     <Select
                       value={dateFormat}
                       label="Formato de Data"
-                      onChange={(e) => setDateFormat(e.target.value as 'YYYY-MM-DD' | 'DD/MM/YYYY')}
+                      onChange={(e) => setDateFormat(e.target.value as 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'DD-MM-YYYY' | 'DD.MM.YYYY' | 'DD/MM/YY' | 'DD-MM-YY' | 'DD.MM.YY')}
                       disabled={isUploading}
                     >
                       {config.validation.supportedDateFormats.map(format => (
                         <MenuItem key={format} value={format}>
-                          {format === 'YYYY-MM-DD' ? 'AAAA-MM-DD' : 'DD/MM/AAAA'}
+                          {format === 'YYYY-MM-DD' ? 'AAAA-MM-DD' : 
+                           format === 'DD/MM/YYYY' ? 'DD/MM/AAAA' :
+                           format === 'DD-MM-YYYY' ? 'DD-MM-AAAA' :
+                           format === 'DD.MM.YYYY' ? 'DD.MM.AAAA' :
+                           format === 'DD/MM/YY' ? 'DD/MM/AA' :
+                           format === 'DD-MM-YY' ? 'DD-MM-AA' :
+                           format === 'DD.MM.YY' ? 'DD.MM.AA' : format}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl fullWidth>
+                    <InputLabel>Separador Decimal</InputLabel>
+                    <Select
+                      value={decimalSeparator}
+                      label="Separador Decimal"
+                      onChange={(e) => setDecimalSeparator(e.target.value as ',' | '.')}
+                      disabled={isUploading}
+                    >
+                      {config.validation.supportedDecimalSeparators.map(sep => (
+                        <MenuItem key={sep} value={sep}>
+                          {sep === ',' ? 'Vírgula (,) - 1.234,56' : 'Ponto (.) - 1,234.56'}
                         </MenuItem>
                       ))}
                     </Select>
@@ -438,8 +509,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onUpload, isUploading })
                 <AlertTitle>Formato obrigatório do arquivo</AlertTitle>
                 <Typography variant="body2">
                   • Primeira linha: cabeçalho com colunas obrigatórias<br />
-                  • Colunas: <strong>{config.validation.requiredHeaders.join(', ')}</strong><br />
-                  • Máximo de {config.app.maxRows} linhas de dados
+                  • Colunas obrigatórias: <strong>name, document, publicArea, number, neighborhood, city, state, postalCode, amount, dueDate, description</strong><br />
+                  • Máximo de {config.app.maxRows} linhas de dados<br />
+                  • <strong>Sequência:</strong> Nome, Documento, Logradouro, Número, Bairro, Cidade, Estado, CEP, Valor, Data de Vencimento, Descrição<br />
+                  • <strong>Formatos suportados:</strong> CSV (; , Tab |) • Datas (DD/MM/AAAA, AAAA-MM-DD, DD-MM-AAAA, DD.MM.AAAA) • Decimais (, .)
                 </Typography>
               </Alert>
 

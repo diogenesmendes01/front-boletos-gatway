@@ -27,7 +27,17 @@ export default defineConfig({
   
   // Configuração de servidor dev
   server: {
-    port: 3000,
-    host: true
+    port: 5173,
+    host: true,
+    proxy: {
+      '/v1': {
+        target: 'https://api.envio-boleto.olympiabank.xyz',
+        changeOrigin: true,
+        secure: true,
+        headers: {
+          'Origin': 'https://api.envio-boleto.olympiabank.xyz'
+        }
+      }
+    }
   }
 })

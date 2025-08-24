@@ -91,13 +91,14 @@ class ApiService {
     file: File,
     options?: {
       fileType?: 'csv' | 'xlsx';
-      delimiter?: ',' | ';';
-      dateFormat?: 'YYYY-MM-DD' | 'DD/MM/YYYY';
+      delimiter?: ',' | ';' | '\t' | '|';
+      dateFormat?: 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'DD-MM-YYYY' | 'DD.MM.YYYY' | 'DD/MM/YY' | 'DD-MM-YY' | 'DD.MM.YY';
+      decimalSeparator?: ',' | '.';
       webhookUrl?: string;
     }
   ): Promise<ImportResponse> {
     if (config.app.mockMode) {
-      return this.mockUploadImport(file, options);
+      return this.mockUploadImport();
     }
 
     const formData = new FormData();
@@ -118,6 +119,12 @@ class ApiService {
       formData.append('dateFormat', options.dateFormat);
     } else {
       formData.append('dateFormat', 'YYYY-MM-DD');
+    }
+
+    if (options?.decimalSeparator) {
+      formData.append('decimalSeparator', options.decimalSeparator);
+    } else {
+      formData.append('decimalSeparator', ',');
     }
 
     if (options?.webhookUrl) {
@@ -147,7 +154,7 @@ class ApiService {
 
   async downloadResults(importId: string): Promise<Blob> {
     if (config.app.mockMode) {
-      return this.mockDownloadResults(importId);
+      return this.mockDownloadResults();
     }
 
     const response = await this.client.get(`/v1/imports/${importId}/results.csv`, {
@@ -158,7 +165,7 @@ class ApiService {
 
   async downloadErrors(importId: string): Promise<Blob> {
     if (config.app.mockMode) {
-      return this.mockDownloadErrors(importId);
+      return this.mockDownloadErrors();
     }
 
     const response = await this.client.get(`/v1/imports/${importId}/errors.csv`, {
@@ -169,11 +176,18 @@ class ApiService {
 
   subscribeToProgress(
     importId: string,
-    onMessage: (data: any) => void,
+    onMessage: (data: {
+      processed: number;
+      succeeded: number;
+      failed: number;
+      remaining: number;
+      etaSeconds: number;
+      status?: string;
+    }) => void,
     onError?: (error: Event) => void
   ): () => void {
     if (config.app.mockMode) {
-      return this.mockSubscribeToProgress(importId, onMessage, onError);
+      return this.mockSubscribeToProgress(importId, onMessage);
     }
 
     let reconnectAttempts = 0;
@@ -227,22 +241,24 @@ class ApiService {
 
   clearToken(): void {
     localStorage.removeItem('token');
+    localStorage.removeItem('userEmail');
   }
 
   getToken(): string | null {
     return localStorage.getItem('token');
   }
 
+  isAuthenticated(): boolean {
+    const token = this.getToken();
+    return token !== null && token.trim() !== '';
+  }
+
+  getUserEmail(): string | null {
+    return localStorage.getItem('userEmail');
+  }
+
   // Mock methods for development
-  private async mockUploadImport(
-    _file: File,
-    _options?: {
-      fileType?: 'csv' | 'xlsx';
-      delimiter?: ',' | ';';
-      dateFormat?: 'YYYY-MM-DD' | 'DD/MM/YYYY';
-      webhookUrl?: string;
-    }
-  ): Promise<ImportResponse> {
+  private async mockUploadImport(): Promise<ImportResponse> {
     await this.delay(1000);
     
     const importId = crypto.randomUUID();
@@ -283,31 +299,38 @@ class ApiService {
     return data;
   }
 
-  private async mockDownloadResults(_importId: string): Promise<Blob> {
+  private async mockDownloadResults(): Promise<Blob> {
     await this.delay(500);
     
-    const csvContent = `email,name,document,amount,status
-joao@exemplo.com,João Silva,12345678901,100.50,success
-maria@exemplo.com,Maria Santos,98765432109,250.00,success
-pedro@exemplo.com,Pedro Oliveira,45612378945,75.25,success`;
+    const csvContent = `name,document,publicarea,number,neighborhood,city,state,postalcode,amount,duedate,description,status
+João Silva,12345678901,Rua das Flores,123,Centro,São Paulo,SP,01234-567,100.50,2024-12-31,Boletos diversos,success
+Maria Santos,98765432109,Avenida Principal,456,Vila Nova,Rio de Janeiro,RJ,20000-000,250.00,2024-12-31,Boletos diversos,success
+Pedro Oliveira,45612378945,Travessa da Paz,789,Santo Antônio,Belo Horizonte,MG,30000-000,75.25,2024-12-31,Boletos diversos,success`;
     
     return new Blob([csvContent], { type: 'text/csv' });
   }
 
-  private async mockDownloadErrors(_importId: string): Promise<Blob> {
+  private async mockDownloadErrors(): Promise<Blob> {
     await this.delay(500);
     
-    const csvContent = `email,name,document,amount,error
-invalid@email,Ana Costa,invalid_document,invalid_amount,Documento inválido
-incomplete@data.com,,12345678901,50.00,Nome obrigatório`;
+    const csvContent = `name,document,publicarea,number,neighborhood,city,state,postalcode,amount,duedate,description,error
+,12345678901,Rua das Flores,123,Centro,São Paulo,SP,01234-567,100.50,2024-12-31,Boletos diversos,Nome obrigatório
+Ana Costa,invalid_document,Rua das Flores,123,Centro,São Paulo,SP,01234-567,100.50,2024-12-31,Boletos diversos,Documento inválido
+João Silva,12345678901,,123,Centro,São Paulo,SP,01234-567,100.50,2024-12-31,Boletos diversos,Logradouro obrigatório`;
     
     return new Blob([csvContent], { type: 'text/csv' });
   }
 
   private mockSubscribeToProgress(
     importId: string,
-    onMessage: (data: unknown) => void,
-    _onError?: (error: Event) => void
+    onMessage: (data: {
+      processed: number;
+      succeeded: number;
+      failed: number;
+      remaining: number;
+      etaSeconds: number;
+      status?: string;
+    }) => void
   ): () => void {
     const interval = setInterval(() => {
       const data = this.mockData[importId];
@@ -317,7 +340,7 @@ incomplete@data.com,,12345678901,50.00,Nome obrigatório`;
           succeeded: data.stats.succeeded,
           failed: data.stats.failed,
           remaining: data.stats.remaining,
-          etaSeconds: data.etaSeconds,
+          etaSeconds: data.etaSeconds || 0,
         });
       }
     }, 1000);

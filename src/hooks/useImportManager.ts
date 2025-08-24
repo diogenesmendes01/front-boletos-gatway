@@ -4,8 +4,9 @@ import toast from 'react-hot-toast';
 
 interface UploadOptions {
   fileType?: 'csv' | 'xlsx';
-  delimiter?: ',' | ';';
-  dateFormat?: 'YYYY-MM-DD' | 'DD/MM/YYYY';
+  delimiter?: ',' | ';' | '\t' | '|';
+  dateFormat?: 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'DD-MM-YYYY' | 'DD.MM.YYYY' | 'DD/MM/YY' | 'DD-MM-YY' | 'DD.MM.YY';
+  decimalSeparator?: ',' | '.';
   webhookUrl?: string;
 }
 
