@@ -1,13 +1,18 @@
 # Build stage
 FROM node:18-alpine AS builder
 
+# Instalar dependências do sistema necessárias
+RUN apk add --no-cache python3 make g++ git
+
 WORKDIR /app
 
 # Copiar package.json e package-lock.json
 COPY package*.json ./
 
-# Instalar dependências
-RUN npm ci
+# Configurar npm para produção e instalar dependências
+RUN npm config set registry https://registry.npmjs.org/ && \
+    npm cache clean --force && \
+    npm ci --silent --no-optional --prefer-offline
 
 # Copiar código fonte
 COPY . .
