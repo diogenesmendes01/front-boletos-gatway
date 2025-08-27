@@ -3,6 +3,7 @@ name: Deploy React Frontend
 on:
   push:
     branches: [main, master]
+  workflow_dispatch:  # Permite execução manual
 
 env:
   REGISTRY: ghcr.io
@@ -29,14 +30,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
+            VITE_MOCK_MODE=${{ vars.VITE_MOCK_MODE }}
+            VITE_APP_ENVIRONMENT=${{ vars.VITE_APP_ENVIRONMENT }}
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
@@ -44,18 +60,46 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          # se usar porta diferente de 22, adicione:
-          # port: ${{ secrets.VPS_PORT }}
+          port: ${{ secrets.VPS_PORT || 22 }}
           script_stop: true
-          envs: GHCR_USER,GHCR_TOKEN
           script: |
-            # login no GHCR (caso imagem seja privada)
-            if [ -n "$GHCR_USER" ] && [ -n "$GHCR_TOKEN" ]; then
-              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            # Verificar se o diretório existe
+            if [ ! -d "/opt/front-boletos-getway" ]; then
+              echo "❌ Diretório não existe. Execute o script setup-vps.sh primeiro!"
+              exit 1
             fi
-
+            
             cd /opt/front-boletos-getway
-            if docker compose version >/dev/null 2>&1; then COMPOSE="docker compose"; else COMPOSE="docker-compose"; fi
+            
+            # Fazer backup antes do deploy
+            if [ -f "backup.sh" ]; then
+              ./backup.sh || true
+            fi
+            
+            # Pull da nova imagem
+            echo "📥 Baixando nova imagem..."
+            if docker compose version >/dev/null 2>&1; then 
+              COMPOSE="docker compose"
+            else 
+              COMPOSE="docker-compose"
+            fi
+            
             $COMPOSE pull
-            $COMPOSE up -d
+            
+            # Restart com zero downtime
+            echo "🔄 Reiniciando aplicação..."
+            $COMPOSE up -d --no-deps --force-recreate frontend
+            
+            # Limpar imagens antigas
             docker image prune -f
+            
+            # Verificar saúde do container
+            echo "🏥 Verificando health check..."
+            sleep 5
+            if docker ps | grep -q "front-boletos-getway"; then
+              echo "✅ Deploy concluído com sucesso!"
+            else
+              echo "❌ Erro no deploy, verificando logs..."
+              docker logs front-boletos-getway --tail 50
+              exit 1
+            fi
