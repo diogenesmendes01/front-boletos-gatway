@@ -1,0 +1,70 @@
+# Dockerfile otimizado para produção com Node oficial (não Alpine)
+# Usa imagem base Debian que tem melhor compatibilidade com binários nativos
+
+# Build stage - Dependências
+FROM node:18-slim AS deps
+
+# Instalar dependências do sistema
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copiar arquivos de dependências
+COPY package*.json ./
+
+# Instalar dependências com npm ci
+RUN npm ci --only=production --silent && \
+    npm cache clean --force
+
+# Build stage - Compilação  
+FROM node:18-slim AS builder
+
+# Instalar dependências do sistema
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copiar package files
+COPY package*.json ./
+
+# Instalar todas as dependências (incluindo dev)
+RUN npm ci --silent && \
+    npm cache clean --force
+
+# Copiar código fonte
+COPY . .
+
+# Configurar variáveis de ambiente
+ENV NODE_ENV=production
+ENV VITE_APP_ENVIRONMENT=production
+
+# Build da aplicação
+RUN npm run build
+
+# Production stage - Nginx
+FROM nginx:stable-alpine
+
+# Copiar build para nginx
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copiar configuração nginx
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Adicionar health check endpoint
+RUN echo "OK" > /usr/share/nginx/html/health
+
+# Expor porta
+EXPOSE 80
+
+# Comando para iniciar nginx
+CMD ["nginx", "-g", "daemon off;"]
