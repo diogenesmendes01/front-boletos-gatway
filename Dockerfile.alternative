@@ -1,3 +1,6 @@
+# Dockerfile Alternativo - Resolve Problema do Rollup
+# Use este se o Dockerfile principal ainda falhar
+
 # Build stage - Dependências
 FROM node:18-alpine AS deps
 
@@ -32,7 +35,7 @@ COPY . .
 ENV NODE_ENV=production
 ENV VITE_APP_ENVIRONMENT=production
 
-# Build com Vite
+# Tentar build com Vite
 RUN npm run build
 
 # Production stage
