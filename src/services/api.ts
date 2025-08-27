@@ -2,6 +2,7 @@ import axios from 'axios';
 import type { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 import type { ImportResponse, ImportStatusResponse } from '../types/import.types';
 import { config } from '../config/environment';
+import { authService } from './authService';
 
 class ApiService {
   private client: AxiosInstance;
@@ -17,14 +18,17 @@ class ApiService {
     });
 
     this.setupInterceptors();
+    this.setupAuthInterceptor();
   }
 
   private setupInterceptors() {
-    // Interceptor de requisição para adicionar token
-    this.client.interceptors.request.use((config) => {
-      const token = localStorage.getItem('token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+    // Interceptor de requisição para adicionar token JWT
+    this.client.interceptors.request.use(async (config) => {
+      if (authService.isAuthenticated()) {
+        const token = authService.getAccessToken();
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
       }
       return config;
     });
@@ -54,6 +58,41 @@ class ApiService {
     );
   }
 
+  // Interceptor para refresh automático de token
+  private setupAuthInterceptor() {
+    this.client.interceptors.response.use(
+      (response) => response,
+      async (error: AxiosError) => {
+        const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
+        
+        if (error.response?.status === 401 && !originalRequest._retry) {
+          originalRequest._retry = true;
+          
+          try {
+            // Tentar renovar o token
+            await authService.refreshToken();
+            
+            // Reenviar a requisição com o novo token
+            const newToken = authService.getAccessToken();
+            if (newToken) {
+              originalRequest.headers = originalRequest.headers || {};
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              return this.client.request(originalRequest);
+            }
+          } catch (refreshError) {
+            console.error('Falha ao renovar token:', refreshError);
+            // Se falhar, fazer logout
+            await authService.logout();
+            window.location.href = '/login';
+            return Promise.reject(refreshError);
+          }
+        }
+        
+        return Promise.reject(error);
+      }
+    );
+  }
+
   private shouldRetry(error: AxiosError): boolean {
     const status = error.response?.status;
     return status === 429 || (status !== undefined && status >= 500);
@@ -65,8 +104,8 @@ class ApiService {
 
     switch (status) {
       case 401:
-        localStorage.removeItem('token');
-        window.location.href = '/login';
+        // Token inválido - o interceptor de auth já trata isso
+        console.error('Token inválido ou expirado');
         break;
       case 400:
         if (errorData?.error?.code) {
@@ -235,26 +274,31 @@ class ApiService {
     };
   }
 
-  setToken(token: string): void {
-    localStorage.setItem('token', token);
+  // Métodos de compatibilidade com o sistema antigo
+  setToken(): void {
+    // Para compatibilidade - agora usa authService
+    console.warn('setToken está deprecated. Use authService.login()');
   }
 
   clearToken(): void {
-    localStorage.removeItem('token');
-    localStorage.removeItem('userEmail');
+    // Para compatibilidade - agora usa authService
+    console.warn('clearToken está deprecated. Use authService.logout()');
   }
 
   getToken(): string | null {
-    return localStorage.getItem('token');
+    // Para compatibilidade - agora usa authService
+    return authService.getAccessToken();
   }
 
   isAuthenticated(): boolean {
-    const token = this.getToken();
-    return token !== null && token.trim() !== '';
+    // Para compatibilidade - agora usa authService
+    return authService.isAuthenticated();
   }
 
   getUserEmail(): string | null {
-    return localStorage.getItem('userEmail');
+    // Para compatibilidade - agora usa authService
+    const user = authService.getUser();
+    return user?.email || null;
   }
 
   // Mock methods for development

@@ -2,9 +2,6 @@ import React, { useState } from 'react';
 import {
   Box,
   Container,
-  AppBar,
-  Toolbar,
-  Typography,
   Button,
   Badge,
   Stack,
@@ -17,19 +14,18 @@ import {
   Chip,
   IconButton,
   Tooltip,
+  Typography,
 } from '@mui/material';
 import {
-  Description,
   History,
-  Logout,
   Info,
   Refresh,
   Add,
 } from '@mui/icons-material';
 import { FileUpload } from '../components/FileUpload';
 import { ImportStatus } from '../components/ImportStatus';
+import { UserHeader } from '../components/UserHeader';
 import { useImportManager } from '../hooks/useImportManager';
-import { apiService } from '../services/api';
 import { useErrorHandler } from '../hooks/useErrorHandler';
 import toast from 'react-hot-toast';
 
@@ -71,13 +67,8 @@ export const ImportPage: React.FC = () => {
     clearCurrentImport();
   };
 
-  const handleLogout = () => {
-    apiService.clearToken();
-    toast.success('Logout realizado com sucesso!');
-    window.location.href = '/login';
-  };
-
-  const userEmail = apiService.getUserEmail();
+  // Removido handleLogout pois agora está no UserHeader
+  // const user = authService.getUser(); // Removido pois não é mais usado
 
   const selectHistoryItem = (importId: string) => {
     selectImport(importId);
@@ -113,55 +104,28 @@ export const ImportPage: React.FC = () => {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-      <AppBar position="static" color="default" elevation={1}>
-        <Toolbar>
-          <Stack direction="row" alignItems="center" spacing={2} sx={{ flexGrow: 1 }}>
-            <Description color="primary" sx={{ fontSize: 32 }} />
-            <Box>
-              <Typography variant="h5" component="h1" fontWeight="bold">
-                Importador de Boletos
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                OlympiaBank Integration
-              </Typography>
-              {userEmail && (
-                <Typography variant="caption" color="primary.main" sx={{ display: 'block', mt: 0.5 }}>
-                  Usuário: {userEmail}
-                </Typography>
-              )}
-            </Box>
-          </Stack>
-          
-          <Stack direction="row" spacing={1}>
-            <Button
-              startIcon={<History />}
-              onClick={() => setShowHistory(!showHistory)}
-              color="inherit"
-              sx={{ mr: 1 }}
-            >
-              Histórico
-              {imports.length > 0 && (
-                <Badge
-                  badgeContent={imports.length}
-                  color="primary"
-                  sx={{ ml: 1 }}
-                />
-              )}
-            </Button>
-            
-            <Button
-              startIcon={<Logout />}
-              onClick={handleLogout}
-              color="error"
-              variant="outlined"
-            >
-              Sair
-            </Button>
-          </Stack>
-        </Toolbar>
-      </AppBar>
+      <UserHeader />
 
       <Container maxWidth="xl" sx={{ py: 4 }}>
+        {/* Botão de histórico */}
+        <Box sx={{ mb: 3, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button
+            startIcon={<History />}
+            onClick={() => setShowHistory(!showHistory)}
+            variant="outlined"
+            color="primary"
+          >
+            Histórico
+            {imports.length > 0 && (
+              <Badge
+                badgeContent={imports.length}
+                color="primary"
+                sx={{ ml: 1 }}
+              />
+            )}
+          </Button>
+        </Box>
+
         <Collapse in={showHistory && imports.length > 0}>
           <Card sx={{ mb: 3 }} elevation={2}>
             <CardContent>

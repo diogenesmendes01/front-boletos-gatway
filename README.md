@@ -4,6 +4,7 @@ Frontend moderno para importação de boletos bancários via API OlympiaBank, de
 
 ## 🚀 **Funcionalidades**
 
+- **Autenticação JWT** com refresh automático de token
 - **Upload de arquivos** CSV/XLSX com validação em tempo real
 - **Monitoramento em tempo real** via Server-Sent Events (SSE)
 - **Fallback automático** para polling em caso de falha no SSE
@@ -12,6 +13,7 @@ Frontend moderno para importação de boletos bancários via API OlympiaBank, de
 - **Retry automático** para erros de rede
 - **Interface responsiva** e moderna
 - **Tratamento de erros** abrangente
+- **Logout automático** em caso de token expirado
 
 ## 🛠️ **Stack Tecnológica**
 
@@ -53,7 +55,12 @@ VITE_MOCK_MODE=false
 
 # Nome da aplicação
 VITE_APP_NAME=Importador de Boletos
+
+# Configurações de autenticação
+VITE_DEBUG_MODE=false
+VITE_LOG_LEVEL=warn
 ```
+
 
 ### 4. **Execute o projeto**
 ```bash
@@ -83,11 +90,45 @@ src/
 │   ├── ImportPage.tsx  # Página principal de importação
 │   └── LoginPage.tsx   # Página de login
 ├── services/           # Serviços da API
-│   └── api.ts         # Cliente HTTP com interceptors
+│   ├── api.ts         # Cliente HTTP com interceptors
+│   └── authService.ts # Serviço de autenticação JWT
 ├── types/              # Definições de tipos TypeScript
 │   └── import.types.ts # Tipos relacionados a importações
 └── theme/              # Configurações de tema
     └── theme.ts        # Tema Material-UI personalizado
+```
+
+## 🔐 **Sistema de Autenticação**
+
+O sistema implementa autenticação JWT completa seguindo o padrão da API OlympiaBank:
+
+### **Fluxo de Autenticação**
+1. **Login**: Usuário fornece email e token OlympiaBank
+2. **Validação**: Sistema valida credenciais e retorna JWT
+3. **Refresh**: Token é renovado automaticamente 5 minutos antes da expiração
+4. **Logout**: Token é invalidado e dados locais são limpos
+
+### **Segurança**
+- **JWT válido por 30 dias** com refresh automático
+- **Interceptors automáticos** para adicionar token em todas as requisições
+- **Logout automático** em caso de token expirado
+- **Validação de token** em cada requisição
+
+### **Uso**
+```typescript
+import { authService } from './services/authService';
+
+// Login
+const result = await authService.login(email, olympiaToken);
+
+// Verificar autenticação
+if (authService.isAuthenticated()) {
+  const user = authService.getUser();
+  console.log('Usuário logado:', user.companyName);
+}
+
+// Logout
+await authService.logout();
 ```
 
 ## 🔧 **Configurações Avançadas**

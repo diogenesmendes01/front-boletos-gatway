@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -18,13 +18,13 @@ import {
   Email,
   Login,
 } from '@mui/icons-material';
-import { apiService } from '../services/api';
+import { authService } from '../services/authService';
 import { config } from '../config/environment';
 import toast from 'react-hot-toast';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
-  const [token, setToken] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -33,7 +33,7 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     
     // Validação básica dos campos
-    if (!email.trim() || !token.trim()) {
+    if (!email.trim() || !password.trim()) {
       setError('Por favor, preencha todos os campos');
       return;
     }
@@ -42,23 +42,10 @@ export const LoginPage: React.FC = () => {
     setError('');
     
     try {
-      if (config.app.mockMode) {
-        // Modo desenvolvimento - usar credenciais mock
-        if (apiService.isValidMockCredentials(email, token)) {
-          apiService.setToken(token);
-          localStorage.setItem('userEmail', email);
-          toast.success('Login realizado com sucesso!');
-          navigate('/import');
-        } else {
-          setError('Credenciais inválidas. Use as credenciais de teste fornecidas.');
-        }
-      } else {
-        // Modo produção - salvar credenciais sem validar
-        apiService.setToken(token);
-        localStorage.setItem('userEmail', email);
-        toast.success('Credenciais salvas com sucesso!');
-        navigate('/import');
-      }
+      // Autenticação real - sempre usar API de produção
+      const result = await authService.login(email, password);
+      toast.success(`Login realizado com sucesso! Bem-vindo, ${result.companyName}`);
+      navigate('/import');
     } catch (error) {
       setError('Erro ao fazer login');
       console.error('Login error:', error);
@@ -107,11 +94,9 @@ export const LoginPage: React.FC = () => {
                 <Typography variant="body1" color="text.secondary">
                   Importador de Boletos - OlympiaBank
                 </Typography>
-                {!config.app.mockMode && (
-                  <Typography variant="caption" color="primary.main" sx={{ mt: 1, display: 'block' }}>
-                    Modo Produção
-                  </Typography>
-                )}
+                <Typography variant="caption" color="primary.main" sx={{ mt: 1, display: 'block' }}>
+                  Ambiente: {config.app.environment === 'production' ? 'Produção' : 'Desenvolvimento'}
+                </Typography>
               </Box>
             </Stack>
 
@@ -135,16 +120,16 @@ export const LoginPage: React.FC = () => {
                 <TextField
                   fullWidth
                   type="password"
-                  label="Token de API"
-                  placeholder="Bearer token"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
+                  label="Senha"
+                  placeholder="Sua senha"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   disabled={isLoading}
                   InputProps={{
                     startAdornment: <Lock sx={{ color: 'action.active', mr: 1 }} />,
                   }}
                   variant="outlined"
-                  helperText="Chave de acesso fornecida pela OlympiaBank"
+                  helperText="Senha para autenticação"
                 />
 
                 {error && (
@@ -171,84 +156,54 @@ export const LoginPage: React.FC = () => {
                 >
                   {isLoading ? 'Entrando...' : 'Entrar'}
                 </Button>
+
+                <Box sx={{ textAlign: 'center', mt: 2 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Não tem uma conta?{' '}
+                    <Link to="/register" style={{ color: '#2196F3', textDecoration: 'none' }}>
+                      Criar conta
+                    </Link>
+                  </Typography>
+                </Box>
               </Stack>
             </Box>
 
-            {config.app.mockMode ? (
-              <Paper
-                elevation={1}
-                sx={{
-                  mt: 4,
-                  p: 3,
-                  bgcolor: 'success.light',
-                  color: 'success.contrastText',
-                  borderRadius: 2,
-                }}
-              >
-                <Typography variant="h6" gutterBottom>
-                  🚀 Credenciais para Teste (Modo Desenvolvimento)
+            <Paper
+              elevation={1}
+              sx={{
+                mt: 4,
+                p: 3,
+                bgcolor: 'info.light',
+                color: 'info.contrastText',
+                borderRadius: 2,
+              }}
+            >
+              <Typography variant="h6" gutterBottom>
+                🔐 Autenticação por Email e Senha
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 2 }}>
+                O sistema usa autenticação JWT real:
+              </Typography>
+              
+              <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 1, mb: 1 }}>
+                <Typography variant="body2">
+                  • <strong>Email:</strong> para identificação do usuário
                 </Typography>
-                <Typography variant="body2" sx={{ mb: 2 }}>
-                  Use uma das combinações abaixo para entrar:
+                <Typography variant="body2">
+                  • <strong>Senha:</strong> para autenticação
                 </Typography>
-                
-                <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 1, mb: 1 }}>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    <strong>E-mail:</strong> demo@olympiabank.com<br />
-                    <strong>Token:</strong> demo-token-123
-                  </Typography>
-                </Box>
-                
-                <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 1, mb: 1 }}>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    <strong>E-mail:</strong> teste@olympiabank.com<br />
-                    <strong>Token:</strong> teste-token-456
-                  </Typography>
-                </Box>
-                
-                <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 1, mb: 2 }}>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    <strong>E-mail:</strong> admin@olympiabank.com<br />
-                    <strong>Token:</strong> admin-token-789
-                  </Typography>
-                </Box>
-                
-                <Typography variant="caption" sx={{ opacity: 0.8 }}>
-                  Modo desenvolvimento ativo - APIs mockadas
+              </Box>
+              
+              <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 1, mb: 1 }}>
+                <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  <strong>API:</strong> {config.api.baseUrl || 'localhost'}
                 </Typography>
-              </Paper>
-            ) : (
-              <Paper
-                elevation={1}
-                sx={{
-                  mt: 4,
-                  p: 3,
-                  bgcolor: 'info.light',
-                  color: 'info.contrastText',
-                  borderRadius: 2,
-                }}
-              >
-                <Typography variant="h6" gutterBottom>
-                  ℹ️ Modo Produção
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 2 }}>
-                  Em produção, você pode usar:
-                </Typography>
-                
-                <Box sx={{ bgcolor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: 1, mb: 1 }}>
-                  <Typography variant="body2">
-                    • <strong>Qualquer email</strong> para identificação
-                  </Typography>
-                  <Typography variant="body2">
-                    • <strong>Seu token real</strong> fornecido pela OlympiaBank
-                  </Typography>
-                </Box>
-                
-                <Typography variant="caption" sx={{ opacity: 0.8, display: 'block', mt: 2 }}>
-                  O token será validado automaticamente nas chamadas para a API
-                </Typography>
-              </Paper>
-            )}
+              </Box>
+              
+              <Typography variant="caption" sx={{ opacity: 0.8, display: 'block', mt: 2 }}>
+                O sistema gera automaticamente um JWT válido por 30 dias com refresh automático
+              </Typography>
+            </Paper>
           </CardContent>
         </Card>
 
