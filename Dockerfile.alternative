@@ -2,7 +2,7 @@
 # Use este se o Dockerfile principal ainda falhar
 
 # Build stage - Dependências
-FROM node:18-alpine AS deps
+FROM node:20-alpine AS deps
 
 # Instalar dependências do sistema necessárias
 RUN apk add --no-cache python3 make g++ git
@@ -18,7 +18,7 @@ RUN npm config set registry https://registry.npmjs.org/ && \
     npm ci --silent --no-optional --prefer-offline
 
 # Build stage - Compilação
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 # Instalar dependências do sistema necessárias
 RUN apk add --no-cache python3 make g++ git

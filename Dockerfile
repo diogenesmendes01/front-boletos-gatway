@@ -1,5 +1,5 @@
 # Build stage - Dependências
-FROM node:18-alpine AS deps
+FROM node:20-alpine AS deps
 
 # Instalar dependências do sistema necessárias para compilação nativa
 RUN apk add --no-cache \
@@ -20,7 +20,7 @@ RUN npm cache clean --force && \
     npm ci --prefer-offline --no-audit --no-fund
 
 # Build stage - Compilação
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 # Instalar dependências do sistema necessárias
 RUN apk add --no-cache \

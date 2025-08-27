@@ -2,7 +2,7 @@
 # Usa imagem base Debian que tem melhor compatibilidade com binários nativos
 
 # Build stage - Dependências
-FROM node:18-slim AS deps
+FROM node:20-slim AS deps
 
 # Instalar dependências do sistema
 RUN apt-get update && apt-get install -y \
@@ -22,7 +22,7 @@ RUN npm ci --only=production --silent && \
     npm cache clean --force
 
 # Build stage - Compilação  
-FROM node:18-slim AS builder
+FROM node:20-slim AS builder
 
 # Instalar dependências do sistema
 RUN apt-get update && apt-get install -y \
